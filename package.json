@@ -1,0 +1,12 @@
+{
+  "name": "node-cloudfare",
+  "version": "1.0.0",
+  "description": "Converted Node.js server from Cloudflare worker",
+  "main": "node_cloudfare.js",
+  "scripts": {
+    "start": "node node_cloudfare.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12"
+  }
+}
