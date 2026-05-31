@@ -4,6 +4,7 @@
   "description": "Converted Node.js server from Cloudflare worker",
   "main": "node_cloudfare.js",
   "scripts": {
+    "build": "echo 'No compilation required for vanilla Node.js'",
     "start": "node node_cloudfare.mjs"
   },
   "dependencies": {
