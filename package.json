@@ -2,10 +2,13 @@
   "name": "node-cloudfare",
   "version": "1.0.0",
   "description": "Converted Node.js server from Cloudflare worker",
-  "main": "node_cloudfare.js",
+  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "build": "echo 'No compilation required for vanilla Node.js'",
-    "start": "node node_cloudfare.mjs"
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "cheerio": "^1.0.0-rc.12"
