@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Converted Node.js server from Cloudflare worker",
   "main": "index.js",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
