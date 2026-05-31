@@ -1,5 +1,5 @@
-const cheerio = require('cheerio');
-const http = require('http');
+import * as cheerio from 'cheerio';
+import http from 'http';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DEBUG UTILITY
@@ -209,10 +209,23 @@ async function getKwikMp4(kwikUrl, cookies, browserUA, attempt = 1) {
   try {
     const response = await fetchWithRetry(kwikUrl, {
       headers: {
-        'referer': 'https://animepahe.pw/',
+        'referer': 'https://pahe.win/',
         'user-agent': browserUA,
         'cookie': cookies,
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'sec-ch-ua': '"Chromium";v="148", "Brave";v="148", "Not/A)Brand";v="99"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-ch-ua-platform-version': '"19.0.0"',
+        'sec-ch-ua-arch': '"x86"',
+        'sec-ch-ua-bitness': '"64"',
+        'sec-ch-ua-full-version-list': '"Chromium";v="148.0.0.0", "Brave";v="148.0.0.0", "Not/A)Brand";v="99.0.0.0"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+        'sec-gpc': '1',
+        'upgrade-insecure-requests': '1'
       }
     }, { maxAttempts: 3, baseDelay: 800 });
 
@@ -298,7 +311,20 @@ async function getKwikMp4(kwikUrl, cookies, browserUA, attempt = 1) {
             'cookie': combinedCookies,
             'user-agent': browserUA,
             'content-type': 'application/x-www-form-urlencoded',
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'sec-ch-ua': '"Chromium";v="148", "Brave";v="148", "Not/A)Brand";v="99"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-ch-ua-platform-version': '"19.0.0"',
+            'sec-ch-ua-arch': '"x86"',
+            'sec-ch-ua-bitness': '"64"',
+            'sec-ch-ua-full-version-list': '"Chromium";v="148.0.0.0", "Brave";v="148.0.0.0", "Not/A)Brand";v="99.0.0.0"',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'sec-gpc': '1',
+            'upgrade-insecure-requests': '1'
           },
           body: `_token=${token}`,
           redirect: 'manual'
@@ -390,18 +416,6 @@ const server = http.createServer(async (req, res) => {
 
   debugLog('HTTP_SERVER', `Received request: ${req.method} ${req.url}`);
 
-  // Health check endpoint for deployment platforms (like pxxl.app)
-  if (reqUrl.pathname === '/' || reqUrl.pathname === '/health' || reqUrl.pathname === '/healthcheck') {
-    if (!animeSession && !episodeSession) {
-      return sendJSON(200, {
-        developer: "arcane",
-        success: true,
-        status: 200,
-        message: "Server is healthy and running!"
-      });
-    }
-  }
-
   if (!animeSession || !episodeSession) {
     debugLog('HTTP_SERVER', `Bad request: missing animeId or episodeId`);
     return sendJSON(400, {
@@ -434,10 +448,10 @@ const server = http.createServer(async (req, res) => {
     'cf_chl_rc_ni=1',
     'srv=s0',
     'pp_main_4e5e04716f26fd21bf611637f4fb8a46=1',
-    'pp_exp_4e5e04716f26fd21bf611637f4fb8a46=1780150080152',
-    'kwik_session=eyJpdiI6IlVoYVgzd0JELzR5RjQ3WTZTMlEyMWc9PSIsInZhbHVlIjoidjNlOFhUVDNKdHRHZ2RMd2JCQXZ4SGlBUzBoaEZMa1Q3dlJGcU1jbGpCUU0zYk9od1Q0SHdlOThwVGhVOUhzcTZMTUpZL1lGYnZmZGNZNktnaFpJaUJycjFaOFFLN3lZc1ExcEhmc1p1ejBUc3c4MEZDNkwwMkJFUGNWL2RDbjUiLCJtYWMiOiIxNDg4M2QzZGMwNmI3M2IxMTQzNjIyMWVkYWY2YzRiNDc4NDg5ZjNiMTFjNjQwMDY2N2UxMjZhN2IwZTg1M2M4IiwidGFnIjoiIn0%3D',
-    'pp_show_on_4e5e04716f26fd21bf611637f4fb8a46=2',
-    'cf_clearance=zx0XbavcUpqgCmmhWdxafaIUvYEMp.kUrkqS1gIKkUw-1780147713-1.2.1.1-sRwuKxgmBC4fSaYOaGUHVuG5wfZKCoA6cNkcs7oocP5ocFWt4r2Bumv5AHknu_ySML20miYuE7E3NVkdO284RubJovvcXpMEZv2yHovCKajC0o94x7U3kCwQS3DFVgzOHT_t5fveuR5spKr6WJ48G4YpTsqePURRDtQT8n.lN5cJIZAC20eLC24NZGsNfKpYMBKl3MEXqils36slIp1D8rjUG2dAuw3mjdr2uIQAWBRc1OiLbGvoKlm3M8fAsZOgxrtKzCRGH0S21Qb3WjVnHMON4puDhn0gjMtU6eZG5SXhW04nR.AQWzZgog8y3chdhPO.6KKyVelGkkEBnAwyUAKfLbbpIznUj.RGfeCm0K42bZ7grFJBmYH7KNn8ifWRinPsDS56Pj2JzCsTnt3k8y68Hs0_g9Hi1IHPwPTAczA'
+    'pp_exp_4e5e04716f26fd21bf611637f4fb8a46=1780270429299',
+    'kwik_session=eyJpdiI6InFVeDdCMThTMjFIcU5DS0xwaCthU3c9PSIsInZhbHVlIjoidZEtBcGxBWGUvYkVNSlNQYUtZRDg4WXZmbytXaC81TnVremVLRFVBaFNXbzdERjRINkdTakZRdXJYNllxWlF1MkhJKzh5VGZwY1BtVlNqMlhmc1V2RnNIekcxeWhveUltSGx3anpodzJxNTJDTEZReDR1UVRQTG9DbVRtWitvRVEiLCJtYWMiOiIxOGIwOGUyMjg0ZmZiNGU1YTU3ZmMwZTA2NTc3N2I4MmY3OTk2ZjI4M2ZkMGI1NjlkNTkxNDJlN2IwYTVkYWMxIiwidGFnIjoiIn0%3D',
+    'pp_show_on_4e5e04716f26fd21bf611637f4fb8a46=1',
+    'cf_clearance=utaLIKGn.5ubqQDAA2afrLN2n3YLLBnjwYNnb99k8P4-1780266829-1.2.1.1-cbCMsle7D8hhdofjsJRYZ0ErAz3re0Pk6AEKfJ_wwjRNvr89d2EuorNZd48lNGVLftrHDUgSBUC1g1hhbbbSyIMoYZLjy3PjEXP9WVi8naWReGrsI4aaiuvY5.rPho6KVTjWJLtE9bTLiRU2T8MsZQhjFDs.W70Ln9gU8WCKTWv0iZ97R_AjAZK8xzw_z5es4TOdiQgPsL3LYahw0pRdn.TDgS1gF36ErAxC7.u9E7hAalYoIavOXbF8Vh6NKaLVwwzxGWBd.Xzin_4Iu9YlcWvUoae_HeY.FyZ4U_SECyf3AWx5D_WA97Yx2Yfyds_DHfYu0jKOyMWiJApYl.AX216eGEnRrLTzMcKPkgiBtPH2VqDGSLhG503OxA1OIEPqiNGvpO.7nycj9pOnyCSdr8t5uZDh1PkA335MRahXLdE'
   ].join('; ');
 
   const commonHeaders = {
@@ -599,5 +613,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server is running at http://localhost:${PORT}`);
 });
