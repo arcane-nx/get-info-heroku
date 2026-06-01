@@ -1,5 +1,9 @@
 import * as cheerio from 'cheerio';
 import http from 'http';
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
+
+const proxyAgent = new ProxyAgent('http://wofaecmj:twvt6ktgsoyy@38.154.203.95:5863/');
+setGlobalDispatcher(proxyAgent);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DEBUG UTILITY
