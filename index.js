@@ -1,9 +1,8 @@
 import * as cheerio from 'cheerio';
 import http from 'http';
-import { ProxyAgent, setGlobalDispatcher } from 'undici';
+import { ProxyAgent } from 'undici';
 
 const proxyAgent = new ProxyAgent('http://wofaecmj:twvt6ktgsoyy@38.154.203.95:5863/');
-setGlobalDispatcher(proxyAgent);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DEBUG UTILITY
@@ -91,12 +90,17 @@ async function fetchWithRetry(url, options = {}, retryOptions = {}) {
     onRetry     = null,
   } = retryOptions;
 
+  const { useProxy = true, ...fetchOptions } = options;
+  if (useProxy && proxyAgent) {
+    fetchOptions.dispatcher = proxyAgent;
+  }
+
   let lastError;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      debugLog('fetchWithRetry', `Attempt ${attempt}/${maxAttempts} for ${url}`);
-      const response = await fetch(url, options);
+      debugLog('fetchWithRetry', `Attempt ${attempt}/${maxAttempts} for ${url} (useProxy: ${useProxy})`);
+      const response = await fetch(url, fetchOptions);
 
       if (!retryOn.includes(response.status)) {
         debugLog('fetchWithRetry', `Response status ${response.status} (no retry needed) for ${url}`);
@@ -140,10 +144,11 @@ async function fetchWithRetry(url, options = {}, retryOptions = {}) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function getKwikM3u8FromEmbed(embedUrl, cookies, browserUA) {
-  debugLog('getKwikM3u8FromEmbed', `Starting extraction for ${embedUrl}`);
+async function getKwikM3u8FromEmbed(embedUrl, cookies, browserUA, useProxy = true) {
+  debugLog('getKwikM3u8FromEmbed', `Starting extraction for ${embedUrl} (useProxy: ${useProxy})`);
   try {
     const response = await fetchWithRetry(embedUrl, {
+      useProxy,
       headers: {
         'referer': 'https://animepahe.pw/',
         'cookie': cookies,
@@ -207,11 +212,12 @@ async function getKwikM3u8FromEmbed(embedUrl, cookies, browserUA) {
   return null;
 }
 
-async function getKwikMp4(kwikUrl, cookies, browserUA, attempt = 1) {
+async function getKwikMp4(kwikUrl, cookies, browserUA, useProxy = true, attempt = 1) {
   const MAX_RETRIES = 3;
-  debugLog('getKwikMp4', `Attempt ${attempt}/${MAX_RETRIES} for ${kwikUrl}`);
+  debugLog('getKwikMp4', `Attempt ${attempt}/${MAX_RETRIES} for ${kwikUrl} (useProxy: ${useProxy})`);
   try {
     const response = await fetchWithRetry(kwikUrl, {
+      useProxy,
       headers: {
         'referer': 'https://pahe.win/',
         'user-agent': browserUA,
@@ -238,10 +244,14 @@ async function getKwikMp4(kwikUrl, cookies, browserUA, attempt = 1) {
 
     if (html.length < 100 || html.includes('Just a moment')) {
       debugLog('getKwikMp4', `Cloudflare challenge or empty response detected for ${kwikUrl}`);
+      if (useProxy) {
+        debugLog('getKwikMp4', `Retrying WITHOUT proxy...`);
+        return getKwikMp4(kwikUrl, cookies, browserUA, false, 1);
+      }
       if (attempt < MAX_RETRIES) {
         debugLog('getKwikMp4', `Retrying in ${1000 * attempt}ms...`);
         await new Promise(r => setTimeout(r, 1000 * attempt));
-        return getKwikMp4(kwikUrl, cookies, browserUA, attempt + 1);
+        return getKwikMp4(kwikUrl, cookies, browserUA, useProxy, attempt + 1);
       }
       debugLog('getKwikMp4', `Max retries exceeded after Cloudflare check failed`);
       return null;
@@ -308,6 +318,7 @@ async function getKwikMp4(kwikUrl, cookies, browserUA, attempt = 1) {
         const combinedCookies = [cookies, setCookiesStr].filter(Boolean).join('; ');
 
         mp4Promise = fetchWithRetry(action, {
+          useProxy,
           method: 'POST',
           headers: {
             'referer': kwikUrl,
@@ -355,7 +366,7 @@ async function getKwikMp4(kwikUrl, cookies, browserUA, attempt = 1) {
 
       let m3u8Promise = Promise.resolve(null);
       if (embedUrl) {
-        m3u8Promise = getKwikM3u8FromEmbed(embedUrl, cookies, browserUA);
+        m3u8Promise = getKwikM3u8FromEmbed(embedUrl, cookies, browserUA, useProxy);
       }
 
       const [mp4Url, m3u8Url] = await Promise.all([mp4Promise, m3u8Promise]);
@@ -371,15 +382,19 @@ async function getKwikMp4(kwikUrl, cookies, browserUA, attempt = 1) {
     if (attempt < MAX_RETRIES) {
       debugLog('getKwikMp4', `Retrying in ${1000 * attempt}ms...`);
       await new Promise(r => setTimeout(r, 1000 * attempt));
-      return getKwikMp4(kwikUrl, cookies, browserUA, attempt + 1);
+      return getKwikMp4(kwikUrl, cookies, browserUA, useProxy, attempt + 1);
     }
     return null;
   } catch (error) {
     debugLog('getKwikMp4', `Catch block caught error (attempt ${attempt}/${MAX_RETRIES})`, error);
+    if (useProxy) {
+      debugLog('getKwikMp4', `Retrying WITHOUT proxy...`);
+      return getKwikMp4(kwikUrl, cookies, browserUA, false, 1);
+    }
     if (attempt < MAX_RETRIES) {
       debugLog('getKwikMp4', `Retrying in ${1000 * attempt}ms...`);
       await new Promise(r => setTimeout(r, 1000 * attempt));
-      return getKwikMp4(kwikUrl, cookies, browserUA, attempt + 1);
+      return getKwikMp4(kwikUrl, cookies, browserUA, useProxy, attempt + 1);
     }
     return null;
   }
@@ -432,6 +447,11 @@ const server = http.createServer(async (req, res) => {
 
   const playUrl = `https://animepahe.pw/play/${animeSession}/${episodeSession}`;
 
+  const paramCfClearance = reqUrl.searchParams.get('cf_clearance');
+  const paramKwikSession = reqUrl.searchParams.get('kwik_session');
+  const paramLaravelSession = reqUrl.searchParams.get('laravel_session');
+  const paramXsrfToken = reqUrl.searchParams.get('xsrf_token');
+
   const cookies = [
     '__ddgid_=148tXAGIQMh06JSU',
     '__ddgmark_=Us4VULhW1RHETaxT',
@@ -444,8 +464,8 @@ const server = http.createServer(async (req, res) => {
     '__ddg9_=46.203.46.10',
     '__ddg8_=IQjImJknFEKlngWI',
     '__ddg10_=1775545826',
-    'XSRF-TOKEN=eyJpdiI6InJiL2NPQ1ZxekVMNzhnMUYrcUNjb3c9PSIsInZhbHVlIjoiZG1LcXloNnJLTTgrc2M2V05wbTgrL0c5VUx3elRMZWpNSnBSWUtkZ2FnSTF1NlZ2R1hWS2REV01rMG1mWFFFbytuczNFK3J1MlV3ZU1iYnoxczM3MWpWejBJRXZUQktIU1VtckNpZktiUndsSkRMcnB6M3JMb2g5bVU4ay8zZksiLCJtYWMiOiJhZTI5ODA2YzkyOTZmYzEyYTRmZGY1ZWQ2NmQ4ODkzN2VlOWMxMWRhYTIwMjE2ZjI2N2IyMzg4NDNmNGM1ZDA1IiwidGFnIjoiIn0%3D',
-    'laravel_session=eyJpdiI6IlVuSitTdGJFTlVkdUgzQVRkVCtINUE9PSIsInZhbHVlIjoidlNjTVdXZXNidGg0TVp3YmpGUVgvZ0dGMHhrb3RCcTZkZXhYK3diR0FtcmthZ1d1WHV3c2NLU3hhWVl1WDBpQ0tyUkg4d3pXQjl1bW0rZGUyTVgrTjNZWHFzd0hlK2VFNllPbUl1RVBUWis0b0dObC9qWXpmb3ozT0h4NURxU2MiLCJtYWMiOiI1ZWQ4MWYzZTJjZjIwMThhNDk2NTFlMDUxMzE5OGI5YzgwMzE4MTc5ZDEzNmQxYWRhNzhiZDVkN2UzNDQ0MGFiIiwidGFnIjoiIn0%3D'
+    `XSRF-TOKEN=${paramXsrfToken || 'eyJpdiI6InJiL2NPQ1ZxekVMNzhnMUYrcUNjb3c9PSIsInZhbHVlIjoiZG1LcXloNnJLTTgrc2M2V05wbTgrL0c5VUx3elRMZWpNSnBSWUtkZ2FnSTF1NlZ2R1hWS2REV01rMG1mWFFFbytuczNFK3J1MlV3ZU1iYnoxczM3MWpWejBJRXZUQktIU1VtckNpZktiUndsSkRMcnB6M3JMb2g5bVU4ay8zZksiLCJtYWMiOiJhZTI5ODA2YzkyOTZmYzEyYTRmZGY1ZWQ2NmQ4ODkzN2VlOWMxMWRhYTIwMjE2ZjI2N2IyMzg4NDNmNGM1ZDA1IiwidGFnIjoiIn0%3D'}`,
+    `laravel_session=${paramLaravelSession || 'eyJpdiI6IlVuSitTdGJFTlVkdUgzQVRkVCtINUE9PSIsInZhbHVlIjoidlNjTVdXZXNidGg0TVp3YmpGUVgvZ0dGMHhrb3RCcTZkZXhYK3diR0FtcmthZ1d1WHV3c2NLU3hhWVl1WDBpQ0tyUkg4d3pXQjl1bW0rZGUyTVgrTjNZWHFzd0hlK2VFNllPbUl1RVBUWis0b0dObC9qWXpmb3ozT0h4NURxU2MiLCJtYWMiOiI1ZWQ4MWYzZTJjZjIwMThhNDk2NTFlMDUxMzE5OGI5YzgwMzE4MTc5ZDEzNmQxYWRhNzhiZDVkN2UzNDQ0MGFiIiwidGFnIjoiIn0%3D'}`
   ].join('; ');
 
   const kwikCookies = [
@@ -453,9 +473,9 @@ const server = http.createServer(async (req, res) => {
     'srv=s0',
     'pp_main_4e5e04716f26fd21bf611637f4fb8a46=1',
     'pp_exp_4e5e04716f26fd21bf611637f4fb8a46=1780270429299',
-    'kwik_session=eyJpdiI6InFVeDdCMThTMjFIcU5DS0xwaCthU3c9PSIsInZhbHVlIjoidZEtBcGxBWGUvYkVNSlNQYUtZRDg4WXZmbytXaC81TnVremVLRFVBaFNXbzdERjRINkdTakZRdXJYNllxWlF1MkhJKzh5VGZwY1BtVlNqMlhmc1V2RnNIekcxeWhveUltSGx3anpodzJxNTJDTEZReDR1UVRQTG9DbVRtWitvRVEiLCJtYWMiOiIxOGIwOGUyMjg0ZmZiNGU1YTU3ZmMwZTA2NTc3N2I4MmY3OTk2ZjI4M2ZkMGI1NjlkNTkxNDJlN2IwYTVkYWMxIiwidGFnIjoiIn0%3D',
+    `kwik_session=${paramKwikSession || 'eyJpdiI6InFVeDdCMThTMjFIcU5DS0xwaCthU3c9PSIsInZhbHVlIjoidZEtBcGxBWGUvYkVNSlNQYUtZRDg4WXZmbytXaC81TnVremVLRFVBaFNXbzdERjRINkdTakZRdXJYNllxWlF1MkhJKzh5VGZwY1BtVlNqMlhmc1V2RnNIekcxeWhveUltSGx3anpodzJxNTJDTEZReDR1UVRQTG9DbVRtWitvRVEiLCJtYWMiOiIxOGIwOGUyMjg0ZmZiNGU1YTU3ZmMwZTA2NTc3N2I4MmY3OTk2ZjI4M2ZkMGI1NjlkNTkxNDJlN2IwYTVkYWMxIiwidGFnIjoiIn0%3D'}`,
     'pp_show_on_4e5e04716f26fd21bf611637f4fb8a46=1',
-    'cf_clearance=utaLIKGn.5ubqQDAA2afrLN2n3YLLBnjwYNnb99k8P4-1780266829-1.2.1.1-cbCMsle7D8hhdofjsJRYZ0ErAz3re0Pk6AEKfJ_wwjRNvr89d2EuorNZd48lNGVLftrHDUgSBUC1g1hhbbbSyIMoYZLjy3PjEXP9WVi8naWReGrsI4aaiuvY5.rPho6KVTjWJLtE9bTLiRU2T8MsZQhjFDs.W70Ln9gU8WCKTWv0iZ97R_AjAZK8xzw_z5es4TOdiQgPsL3LYahw0pRdn.TDgS1gF36ErAxC7.u9E7hAalYoIavOXbF8Vh6NKaLVwwzxGWBd.Xzin_4Iu9YlcWvUoae_HeY.FyZ4U_SECyf3AWx5D_WA97Yx2Yfyds_DHfYu0jKOyMWiJApYl.AX216eGEnRrLTzMcKPkgiBtPH2VqDGSLhG503OxA1OIEPqiNGvpO.7nycj9pOnyCSdr8t5uZDh1PkA335MRahXLdE'
+    `cf_clearance=${paramCfClearance || 'utaLIKGn.5ubqQDAA2afrLN2n3YLLBnjwYNnb99k8P4-1780266829-1.2.1.1-cbCMsle7D8hhdofjsJRYZ0ErAz3re0Pk6AEKfJ_wwjRNvr89d2EuorNZd48lNGVLftrHDUgSBUC1g1hhbbbSyIMoYZLjy3PjEXP9WVi8naWReGrsI4aaiuvY5.rPho6KVTjWJLtE9bTLiRU2T8MsZQhjFDs.W70Ln9gU8WCKTWv0iZ97R_AjAZK8xzw_z5es4TOdiQgPsL3LYahw0pRdn.TDgS1gF36ErAxC7.u9E7hAalYoIavOXbF8Vh6NKaLVwwzxGWBd.Xzin_4Iu9YlcWvUoae_HeY.FyZ4U_SECyf3AWx5D_WA97Yx2Yfyds_DHfYu0jKOyMWiJApYl.AX216eGEnRrLTzMcKPkgiBtPH2VqDGSLhG503OxA1OIEPqiNGvpO.7nycj9pOnyCSdr8t5uZDh1PkA335MRahXLdE'}`
   ].join('; ');
 
   const commonHeaders = {
@@ -466,11 +486,21 @@ const server = http.createServer(async (req, res) => {
   };
 
   try {
-    debugLog('HTTP_SERVER', `Fetching playUrl: ${playUrl}`);
-    const resFetch = await fetchWithRetry(playUrl, { headers: commonHeaders }, {
-      maxAttempts: 4,
-      baseDelay: 1000,
-    });
+    let resFetch;
+    try {
+      debugLog('HTTP_SERVER', `Fetching playUrl: ${playUrl} (with proxy)`);
+      resFetch = await fetchWithRetry(playUrl, { headers: commonHeaders, useProxy: true }, {
+        maxAttempts: 2,
+        baseDelay: 1000,
+      });
+      if (!resFetch.ok) throw new Error(`HTTP ${resFetch.status}`);
+    } catch (e) {
+      debugLog('HTTP_SERVER', `Failed to fetch playUrl with proxy. Retrying WITHOUT proxy... Error: ${e.message}`);
+      resFetch = await fetchWithRetry(playUrl, { headers: commonHeaders, useProxy: false }, {
+        maxAttempts: 3,
+        baseDelay: 1000,
+      });
+    }
 
     if (!resFetch.ok) {
       debugLog('HTTP_SERVER', `Failed to fetch playUrl. Status: ${resFetch.status}`);
@@ -532,14 +562,30 @@ const server = http.createServer(async (req, res) => {
     const fetchKwikAndMp4 = async (link) => {
       debugLog('fetchKwikAndMp4', `Processing download link: ${link.url}`);
       try {
-        const paheRes = await fetchWithRetry(link.url, {
-          headers: {
-            'cookie': cookies,
-            'referer': 'https://animepahe.pw/',
-            'user-agent': browserUA
-          },
-          redirect: 'follow'
-        }, { maxAttempts: 4, baseDelay: 800 });
+        let paheRes;
+        try {
+          paheRes = await fetchWithRetry(link.url, {
+            useProxy: true,
+            headers: {
+              'cookie': cookies,
+              'referer': 'https://animepahe.pw/',
+              'user-agent': browserUA
+            },
+            redirect: 'follow'
+          }, { maxAttempts: 2, baseDelay: 800 });
+          if (!paheRes.ok) throw new Error(`HTTP ${paheRes.status}`);
+        } catch (e) {
+          debugLog('fetchKwikAndMp4', `Failed to fetch link with proxy. Retrying WITHOUT proxy... Error: ${e.message}`);
+          paheRes = await fetchWithRetry(link.url, {
+            useProxy: false,
+            headers: {
+              'cookie': cookies,
+              'referer': 'https://animepahe.pw/',
+              'user-agent': browserUA
+            },
+            redirect: 'follow'
+          }, { maxAttempts: 3, baseDelay: 800 });
+        }
 
         const paheHtml = await paheRes.text();
         const kwikMatch = paheHtml.match(/https:\/\/kwik\.[a-z]{2,6}\/f\/[a-zA-Z0-9]+/);
@@ -554,7 +600,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (kwikUrl) {
-          const kwikData = await getKwikMp4(kwikUrl, kwikCookies, browserUA);
+          const kwikData = await getKwikMp4(kwikUrl, kwikCookies, browserUA, true);
 
           if (kwikData) {
             let m3u8Url = kwikData.m3u8Url;
