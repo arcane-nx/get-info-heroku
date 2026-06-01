@@ -289,8 +289,18 @@ async function getKwikMp4(kwikUrl, cookies, browserUA, useProxy = true, attempt 
       const decoded = decodeKwik(match[1], parseInt(match[2]), match[3], parseInt(match[4]), parseInt(match[5]), parseInt(match[6]));
       debugLog('getKwikMp4', `Decoded script length: ${decoded.length}`);
       
-      const tokenMatch = decoded.match(/value="([^"]+)"/);
-      const actionMatch = decoded.match(/action="([^"]+)"/);
+      const $form = cheerio.load(decoded);
+      const action = $form('form').attr('action') || (decoded.match(/action="([^"]+)"/) ? decoded.match(/action="([^"]+)"/)[1] : null);
+
+      const bodyParams = [];
+      $form('input').each((i, el) => {
+        const name = $form(el).attr('name');
+        const value = $form(el).attr('value');
+        if (name) {
+          bodyParams.push(`${encodeURIComponent(name)}=${encodeURIComponent(value || '')}`);
+        }
+      });
+      const requestBody = bodyParams.join('&');
 
       const embedMatch = decoded.match(/https:\/\/kwik\.[a-z]{2,6}\/e\/[a-zA-Z0-9]+/);
       if (embedMatch) {
@@ -302,10 +312,8 @@ async function getKwikMp4(kwikUrl, cookies, browserUA, useProxy = true, attempt 
       debugLog('getKwikMp4', `Extracted embedUrl: ${embedUrl}`);
 
       let mp4Promise = Promise.resolve(null);
-      if (tokenMatch && actionMatch) {
-        const token = tokenMatch[1];
-        const action = actionMatch[1];
-        debugLog('getKwikMp4', `Found token and action URL: ${action}`);
+      if (requestBody && action) {
+        debugLog('getKwikMp4', `Found action URL: ${action} and requestBody: ${requestBody}`);
 
         let newCookies = [];
         if (typeof response.headers.getSetCookie === 'function') {
@@ -341,7 +349,7 @@ async function getKwikMp4(kwikUrl, cookies, browserUA, useProxy = true, attempt 
             'sec-gpc': '1',
             'upgrade-insecure-requests': '1'
           },
-          body: `_token=${token}`,
+          body: requestBody,
           redirect: 'manual'
         }, { maxAttempts: 3, baseDelay: 600 }).then(async (postRes) => {
           debugLog('getKwikMp4', `POST action response status: ${postRes.status}`);
